@@ -1,0 +1,3 @@
+
+##for provisioning with snapshots, maybe the gateway should be obsolote in this case
+knife profitbricks server create --activate-gateway 172.17.6.1 -D "der.com [Pre/Prod]" --cpus 4 --ram 4096 --lan_id 4 --name "Ovis_TestServer_With_Knife" -S "SSH Tunnel" --print-after --private_ip 172.17.6.22 --hdd-size 25 --dhcpActive false 
