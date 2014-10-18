@@ -46,10 +46,30 @@ class Chef
         :description => "Amount of CPUs of the new Server",
         :proc => Proc.new { |cpus| Chef::Config[:knife][:profitbricks_cpus] = cpus }
 
+      option :lan_id,
+        :long => "--lan_id LAN_ID",
+        :description => "This is the Profitbricks LAN_ID if you have more than one LAN",
+        :proc => Proc.new { |lan_id| Chef::Config[:knife][:profitbricks_lan_id] = lan_id }
+
+      option :private_ip,
+        :long => "--private_ip PRIVATE_IP",
+        :description => "Private IPS must be in LANs 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16",
+        :proc => Proc.new { |private_ip| Chef::Config[:knife][:profitbricks_private_ip] = private_ip }
+
       option :hdd_size,
         :long => "--hdd-size GB",
         :description => "Size of storage in GB",
         :default => 25
+
+      option :dhcpActive,
+        :long => "--dhcpActive true/false",
+        :description => "Profitbricks DHCP Server activate",
+        :default => false
+
+      option :activate_gateway_ip,
+        :long => "--activate-gateway as a IP Adress der.com[172.17.6.1]/jahnreisen[172.17.6.1]/evb2.net[172.17.2.1]",
+        :description => "Profitbricks DHCP Server activate",
+        :default => "172.17.6.1"
 
       option :bootstrap,
         :long => "--[no-]bootstrap",
@@ -113,6 +133,7 @@ class Chef
         :description => "The Chef node name for your new node default is the name of the server.",
         :proc => Proc.new { |t| Chef::Config[:knife][:chef_node_name] = t }
 
+
       def h
         @highline ||= HighLine.new
       end
@@ -126,6 +147,11 @@ class Chef
           exit 1
         end
 
+        unless Chef::Config[:knife][:profitbricks_lan_id]
+          ui.error("A LAN_ID must be specified, to bring the server in a network")
+          exit 1
+        end
+
         unless Chef::Config[:knife][:profitbricks_server_name]
           ui.error("You need to provide a name for the server")
           exit 1
@@ -135,6 +161,9 @@ class Chef
         msg_pair("Name", Chef::Config[:knife][:profitbricks_server_name])
         msg_pair("Datacenter", Chef::Config[:knife][:profitbricks_datacenter])
         msg_pair("Image", Chef::Config[:knife][:profitbricks_image])
+        msg_pair("LAN_ID", Chef::Config[:knife][:profitbricks_lan_id])
+        msg_pair("Gateway_IP", locate_config_value(:activate_gateway_ip))
+        msg_pair("Private_IP", Chef::Config[:knife][:profitbricks_private_ip])
         msg_pair("CPUs", Chef::Config[:knife][:profitbricks_cpus] || 1)
         msg_pair("Memory", Chef::Config[:knife][:profitbricks_memory] || 1024)
 
@@ -148,6 +177,8 @@ class Chef
         # DELETEME
 
         create_server()
+
+        activate_gateway()
 
         change_password()
         @password = @new_password
@@ -171,16 +202,34 @@ class Chef
         @password = SecureRandom.hex.gsub(/[i|l|0|1|I|L]/,'')
         @new_password = SecureRandom.hex.gsub(/[i|l|0|1|I|L]/,'')
 
+        #FIXME
+        #this Image IDS are from Frankfurt location NOT Karlsruhe
+        #this why they mus be hardcoded
+        #FIXME
+        if locate_config_value(:image_name).include? 'Ubuntu-12.04-LTS' 
+          @fra_image_id = "2b7a190b-4954-11e4-b362-52540066fee9"
+        elsif locate_config_value(:image_name).include? 'Ubuntu-14.04-LTS'
+          @fra_image_id = "a791c238-4956-11e4-b362-52540066fee9"
+        end
+
         storage_options = {:size => locate_config_value(:hdd_size),
                            :data_center_id => @dc.id}
+
+        nic_options = {:lan_id => Chef::Config[:knife][:profitbricks_lan_id], 
+                       :dhcpActive => locate_config_value(:dhcpActive),
+                       :name => "GREEN",
+                       :ip => Chef::Config[:knife][:profitbricks_private_ip]}
+
         if locate_config_value(:profitbricks_snapshot_name)
           puts "#{ui.color("Locating Snapshot", :magenta)}"
           @snapshot = Snapshot.find(:name => locate_config_value(:profitbricks_snapshot_name))
         else
+          #FIXME speak with the profitbricks guys
           puts "#{ui.color("Locating Image", :magenta)}"
+          #FIXME the find Image command work, but it go into a "not find" response 
           @image = Image.find(:name => locate_config_value(:image_name), :region => @dc.region)
           storage_options.merge(:mount_image_id => @image.id,
-                                :profit_bricks_image_password => @password)
+                               :profit_bricks_image_password => @password)
         end
 
         @hdd1 = Storage.create(storage_options)
@@ -190,17 +239,21 @@ class Chef
           wait_for("#{ui.color("Applying Snapshot", :magenta)}") { @dc.provisioned? }
         end
 
+        puts "#{ui.color("Start to create the Server", :magenta)}"
         @server = @dc.create_server(:cores => Chef::Config[:knife][:profitbricks_cpus] || 1,
                                   :ram => Chef::Config[:knife][:profitbricks_memory] || 1024,
-                                  :name => Chef::Config[:knife][:profitbricks_server_name] || "Server",
-                                  :internet_access => true)
+                                  :name => Chef::Config[:knife][:profitbricks_server_name] || "ServerDTO",
+                                  :boot_from_storage_id => @hdd1.id)
+        @nic = @server.create_nic(nic_options)
         wait_for("#{ui.color("Creating Server", :magenta)}") { @dc.provisioned? }
 
+        #because we boot_from_storage directly we do not need to connect the hdd
         @hdd1.connect(:server_id => @server.id, :bus_type => 'VIRTIO')
         wait_for("#{ui.color("Connecting Storage", :magenta)}") { @dc.provisioned? }
 
         puts "#{ui.color("Done creating new Server", :green)}"
 
+        @server.reload
         wait_for("#{ui.color("Waiting for the Server to boot", :magenta)}") { @server.running? }
 
         @server = Server.find(:id => @server.id)
@@ -237,6 +290,11 @@ class Chef
         end
         ssh("mkdir -p #{dot_ssh_path} && echo \"#{ssh_key}\" > #{dot_ssh_path}/authorized_keys && chmod -R go-rwx #{dot_ssh_path}").run
         puts ui.color("Added the ssh key to the authorized_keys of #{locate_config_value(:ssh_user)}", :green)
+      end
+
+      def activate_gateway
+        ssh("route add default gw #{locate_config_value(:activate_gateway_ip)}").run
+        puts ui.color("added the gateway route for gateway Server with IP #{locate_config_value(:activate_gateway_ip)}", :green)
       end
 
       def change_password
