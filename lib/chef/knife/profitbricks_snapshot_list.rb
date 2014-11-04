@@ -26,7 +26,7 @@ class Chef
             ui.color('Memory hotplug', :bold),
             ui.color('CPU hotplug', :bold),
             ui.color('Size', :bold),
-            ui.color('Region', :bold),
+            ui.color('Location', :bold),
         ]
 
         snapshots.each do |i|
@@ -35,7 +35,7 @@ class Chef
           snapshot_list << i.ram_hot_plug.to_s
           snapshot_list << i.cpu_hot_plug.to_s
           snapshot_list << i.size.to_s
-          snapshot_list << i.region.to_s
+          snapshot_list << i.location.to_s
         end
 
         puts ui.list(snapshot_list, :uneven_columns_across, 6)

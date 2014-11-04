@@ -1,5 +1,6 @@
 require 'chef/knife'
 require 'chef/json_compat'
+require 'pp'
 
 require_relative 'profitbricks_base'
 class Chef
@@ -26,24 +27,32 @@ class Chef
         configure
         datacenters = Profitbricks::DataCenter.all
 
+        #pp datacenters
+
         server_list = [
-            ui.color('ID', :bold),
+            #ui.color('ID', :bold),
             ui.color('Name', :bold),
-            ui.color('Datacenter', :bold),
+            ui.color('DC', :bold),
             ui.color('CPUs', :bold),
             ui.color('RAM', :bold),
+            ui.color('Lan_ID', :bold),
             ui.color('IPs', :bold)
 
         ]
 
         datacenters.each do |dc|
           dc.servers.each do |s|
-            server_list << s.id
-            server_list << s.name
-            server_list << dc.name
-            server_list << s.cores.to_s
-            server_list << s.ram.to_s
-            server_list << (s.respond_to?("ips") ? s.ips : "")
+            s.nics.each do |n|
+
+              #server_list << s.id
+              server_list << s.name
+              server_list << dc.name
+              server_list << s.cores.to_s
+              server_list << s.ram.to_s
+              server_list << n.lan_id.to_s
+              server_list << n.ips.to_s
+              #server_list << (n.respond_to?("ips") ? s.ips : "")
+            end
           end
         end
 
