@@ -1,3 +1,6 @@
 
 ##for provisioning with snapshots, maybe the gateway should be obsolote in this case
-knife profitbricks server create --activate-gateway 172.17.6.1 -D "der.com [Pre/Prod]" --cpus 4 --ram 4096 --lan_id 4 --name "Ovis_TestServer_With_Knife" -S "SSH Tunnel" --print-after --private_ip 172.17.6.22 --hdd-size 25 --dhcpActive false 
+knife profitbricks server create --activate-gateway 172.17.6.1 -D "<DATA_CENTER_NAME>" --cpus 4 --ram 4096 --lan_id 4 --name "Ovis_TestServer_With_Knife" -S "<SNAPSHOT_NAME>" --print-after --private_ip 172.17.6.22 --hdd-size 25 --dhcpActive false 
+
+##for provisioning with images
+knife profitbricks server create --activate-gateway 172.17.2.16 -D "DATA_CENTER_NAME" --cpus 2 --ram 2048 --name "Nagios-Server" --image-name "<IMAGE_NAME>" --identity-file ~/.ssh/id_rsa.pub  --print-after --private_ip 172.17.2.200 -L 5 --hdd-size 20 --dhcpActive false
