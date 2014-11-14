@@ -30,6 +30,14 @@ or store them in environment variables
 
 This plugin provides the following Knife subcommands. Specific command options can be found by invoking the subcommand with a ``--help`` flag
 
+### knife profitbricks server list -D <DATACENTER-NAME>
+
+Outputs  a list of all servers in the given DataCenter
+The DATACENTER-NAME Attribute MUST be given 
+
+### knife profitbricks image list
+ Outputs a list of all images.
+
 ### knife profitbricks server create
 
 Provisions a new server and then perform a Chef bootstrap (using the SSH protocol). The goal of the bootstrap is to get Chef installed
@@ -82,14 +90,6 @@ The following are optional options provided by knife:
     -y, --yes                        Say yes to all prompts for confirmation
     -h, --help                       Show this message
 
-
-### knife profitbricks server list
-
-Outputs a list of all servers.
-
-### knife profitbricks image list
-
-Outputs a list of all images.
 
 ### knife profitbricks snapshot list
 
