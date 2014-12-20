@@ -33,7 +33,7 @@ class Chef
         ]
 
         images.each do |i|
-          next if i.type != "HDD"
+          #next if i.type != "HDD"
           image_list << i.id
           image_list << i.name
           image_list << i.ram_hot_plug.to_s

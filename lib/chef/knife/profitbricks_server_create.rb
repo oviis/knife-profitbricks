@@ -47,19 +47,27 @@ class Chef
         :proc => Proc.new { |cpus| Chef::Config[:knife][:profitbricks_cpus] = cpus }
 
       option :lan_id,
+        :short => "-L LAN_ID",
         :long => "--lan_id LAN_ID",
         :description => "This is the Profitbricks LAN_ID if you have more than one LAN",
         :proc => Proc.new { |lan_id| Chef::Config[:knife][:profitbricks_lan_id] = lan_id }
 
+      option :wan_id,
+        :short => "-W WAN_ID",
+        :long => "--wan_id WAN_ID",
+        :description => "This is the Profitbricks WAN_ID for accesing the internet",
+        :proc => Proc.new { |wan_id| Chef::Config[:knife][:profitbricks_wan_id] = wan_id }
+
       option :private_ip,
+        :short => "-IP PRIVATE_IP",
         :long => "--private_ip PRIVATE_IP",
         :description => "Private IPS must be in LANs 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16",
         :proc => Proc.new { |private_ip| Chef::Config[:knife][:profitbricks_private_ip] = private_ip }
 
       option :hdd_size,
         :long => "--hdd-size GB",
-        :description => "Size of storage in GB",
-        :default => 25
+        :description => "Size of storage in GB, if activate, will be create the HDD additionaly",
+        :default => "25"
 
       option :dhcpActive,
         :long => "--dhcpActive true/false",
@@ -67,9 +75,9 @@ class Chef
         :default => false
 
       option :activate_gateway_ip,
-        :long => "--activate-gateway as a IP Adress der.com[172.17.6.1]/jahnreisen[172.17.6.1]/evb2.net[172.17.2.1]",
-        :description => "Profitbricks DHCP Server activate",
-        :default => "172.17.6.1"
+        :short => "-G GATEWAY_IP",
+        :long => "--activate-gateway IP",
+        :description => "Profitbricks DHCP Server activate as a IP Adress"
 
       option :bootstrap,
         :long => "--[no-]bootstrap",
@@ -84,16 +92,22 @@ class Chef
         :default => "root"
 
       option :identity_file,
-        :short => "-i IDENTITY_FILE",
+        :short => "-iF IDENTITY_FILE",
         :long => "--identity-file IDENTITY_FILE",
         :description => "The SSH identity file used for authentication",
         :default => "#{File.expand_path('~')}/.ssh/id_rsa"
 
       option :image_name,
-        :short => "-i IMAGE_NAME",
+        :short => "-I IMAGE_NAME",
         :long => "--image-name IMAGE_NAME",
         :description => "The image name which will be used to create the server, default is 'Ubuntu-12.04-LTS-server-amd64-06.21.13.img'",
         :default => 'Ubuntu-12.04-LTS-server-amd64-06.21.13.img'
+
+      option :location_name,
+        :short => "-loc LOCATION_NAME",
+        :long => "--location-name LOCATION_NAME",
+        :description => "The Location of the datacenters, default is Karlsruhe 'de/fkb' ",
+        :default => 'de/fkb'
 
       option :snapshot_name,
         :short => '-S SNAPSHOT_NAME',
@@ -133,6 +147,12 @@ class Chef
         :description => "The Chef node name for your new node default is the name of the server.",
         :proc => Proc.new { |t| Chef::Config[:knife][:chef_node_name] = t }
 
+      option :ssh_password,
+       :short => "-P PASSWORD",
+       :long => "--ssh-password PASSWORD",
+       :description => "The ssh password to use, default is a random generated one.",
+       :proc => Proc.new { |password| Chef::Config[:knife][:ssh_password] = password }
+
 
       def h
         @highline ||= HighLine.new
@@ -152,6 +172,11 @@ class Chef
           exit 1
         end
 
+        unless Chef::Config[:knife][:profitbricks_wan_id]
+          ui.error("A WAN_ID must be specified, to give the server acces to internet for configuring!")
+          exit 1
+        end
+
         unless Chef::Config[:knife][:profitbricks_server_name]
           ui.error("You need to provide a name for the server")
           exit 1
@@ -162,13 +187,15 @@ class Chef
         msg_pair("Datacenter", Chef::Config[:knife][:profitbricks_datacenter])
         msg_pair("Image", Chef::Config[:knife][:profitbricks_image])
         msg_pair("LAN_ID", Chef::Config[:knife][:profitbricks_lan_id])
+        msg_pair("WAN_ID", Chef::Config[:knife][:profitbricks_wan_id])
         msg_pair("Gateway_IP", locate_config_value(:activate_gateway_ip))
         msg_pair("Private_IP", Chef::Config[:knife][:profitbricks_private_ip])
         msg_pair("CPUs", Chef::Config[:knife][:profitbricks_cpus] || 1)
         msg_pair("Memory", Chef::Config[:knife][:profitbricks_memory] || 1024)
 
-        puts "#{ui.color("Locating Datacenter", :magenta)}"
+        puts "#{ui.color("Locating Datacenter ", :magenta)}"
         @dc = DataCenter.find(:name => Chef::Config[:knife][:profitbricks_datacenter])
+        puts "#{ui.color("found dataCenter with Id : #{@dc.id} and Name: #{@dc.name}", :magenta)}"
         @dc.wait_for_provisioning
 
         # DELETEME for debugging only
@@ -178,13 +205,15 @@ class Chef
 
         create_server()
 
-        activate_gateway()
+        #@password = @new_password
+        #change_password()
+        #puts ui.color("Changed the password successfully", :green)
+        
+        #if config[:activate_gateway_ip]
+        # activate_gateway()
+        #end
 
-        change_password()
-        @password = @new_password
-        puts ui.color("Changed the password successfully", :green)
-
-        upload_ssh_key
+        #upload_ssh_key
 
         if config[:bootstrap]
           bootstrap()
@@ -195,69 +224,101 @@ class Chef
         msg_pair("Datacenter", @dc.name)
         msg_pair("CPUs", @server.cores.to_s)
         msg_pair("RAM", @server.ram.to_s)
-        msg_pair("IPs", (@server.respond_to?("ips") ? @server.ips : ""))
       end
 
       def create_server
         @password = SecureRandom.hex.gsub(/[i|l|0|1|I|L]/,'')
-        @new_password = SecureRandom.hex.gsub(/[i|l|0|1|I|L]/,'')
+        #@new_password = SecureRandom.hex.gsub(/[i|l|0|1|I|L]/,'')
+        @hdd_name = SecureRandom.hex(4)
 
-        #FIXME
-        #this Image IDS are from Frankfurt location NOT Karlsruhe
-        #this why they mus be hardcoded
-        #FIXME
-        if locate_config_value(:image_name).include? 'Ubuntu-12.04-LTS' 
-          @fra_image_id = "2b7a190b-4954-11e4-b362-52540066fee9"
-        elsif locate_config_value(:image_name).include? 'Ubuntu-14.04-LTS'
-          @fra_image_id = "a791c238-4956-11e4-b362-52540066fee9"
-        end
-
-        storage_options = {:size => locate_config_value(:hdd_size),
-                           :data_center_id => @dc.id}
-
-        nic_options = {:lan_id => Chef::Config[:knife][:profitbricks_lan_id], 
-                       :dhcpActive => locate_config_value(:dhcpActive),
-                       :name => "GREEN",
-                       :ip => Chef::Config[:knife][:profitbricks_private_ip]}
-
+        #locating given image or snapshot
         if locate_config_value(:profitbricks_snapshot_name)
           puts "#{ui.color("Locating Snapshot", :magenta)}"
           @snapshot = Snapshot.find(:name => locate_config_value(:profitbricks_snapshot_name))
         else
-          #FIXME speak with the profitbricks guys
-          puts "#{ui.color("Locating Image", :magenta)}"
-          #FIXME the find Image command work, but it go into a "not find" response 
-          @image = Image.find(:name => locate_config_value(:image_name), :region => @dc.region)
-          storage_options.merge(:mount_image_id => @image.id,
-                               :profit_bricks_image_password => @password)
+          puts "#{ui.color("Locating Image", :magenta)}"  
+          @image = Image.find(:name => locate_config_value(:image_name), :location => locate_config_value(:location_name))
+          puts "#{ui.color("found Image with Id : #{@image.id} and Name: #{@image.name}", :magenta)}"
         end
 
-        @hdd1 = Storage.create(storage_options)
-        wait_for("#{ui.color("Creating Storage", :magenta)}") { @dc.provisioned? }
+   
+
+          if locate_config_value(:profitbricks_snapshot_name)
+            wait_for(ui.color("Creating Storage", :magenta)) { @dc.provisioned? }
+            @hdd1 = Storage.create(
+                             :size => locate_config_value(:hdd_size),
+                             :data_center_id => @dc.id,
+                             :name => "HDD-#{@hdd_name}",
+                             :bus_type => 'VIRTIO'
+                             )
+            @snapshot.update(:bootable => true)
+            @snapshot.rollback(:storage_id => @hdd1.id)
+            wait_for("#{ui.color("Applying Snapshot", :magenta)}") { @dc.provisioned? }
+          elsif locate_config_value(:image_name)
+            puts "#{ui.color("will merge HDD with ImageId : #{@image.id} and ImageName: #{@image.name}", :magenta)}"
+            wait_for(ui.color("Creating Storage", :magenta)) { @dc.provisioned? }
+            @hdd1 = Storage.create(:mount_image_id => @image.id,
+                                   :profit_bricks_image_password => @password,
+                                   :size => locate_config_value(:hdd_size),
+                                   :data_center_id => @dc.id,
+                                   :name => "HDD-#{@hdd_name}"
+                                )
+          end
+
+
         if locate_config_value(:profitbricks_snapshot_name)
-          @snapshot.rollback(:storage_id => @hdd1.id)
-          wait_for("#{ui.color("Applying Snapshot", :magenta)}") { @dc.provisioned? }
+          puts "#{ui.color("Start to create the Server and booting from #{@hdd1.name} ", :magenta)}"
+          @server = @dc.create_server(:cores => Chef::Config[:knife][:profitbricks_cpus] || 1,
+                                  :ram => Chef::Config[:knife][:profitbricks_memory] || 1024,
+                                  :name => Chef::Config[:knife][:profitbricks_server_name] || "ServerNoName",
+                                  :boot_from_storage_id => @hdd1.id
+                                  )
+        else
+          puts "#{ui.color("Start to create the Server and booting from #{@hdd1.name} ", :magenta)}"
+          @server = @dc.create_server(:cores => Chef::Config[:knife][:profitbricks_cpus] || 1,
+                                  :ram => Chef::Config[:knife][:profitbricks_memory] || 1024,
+                                  :name => Chef::Config[:knife][:profitbricks_server_name] || "ServerNoName",
+                                  :boot_from_storage_id => @hdd1.id
+                                  )
+        end
+        @dc.wait_for_provisioning
+        wait_for(ui.color("Waiting for the Server to be created", :magenta)) { @dc.provisioned? }
+
+        @lan_id_number = Chef::Config[:knife][:profitbricks_lan_id]
+        @wan_id_numer = Chef::Config[:knife][:profitbricks_wan_id]
+
+        @nic_private = @server.create_nic(:lan_id => @lan_id_number, 
+                       :dhcpActive => locate_config_value(:dhcpActive),
+                       :name => "GREEN",
+                       :server_id => @server.id,
+                       :ip => Chef::Config[:knife][:profitbricks_private_ip])
+
+        @nic_public = @server.create_nic( 
+                       :lan_id => @wan_id_numer,
+                       :dhcpActive => "true",
+                       :name => "RED",
+                       :server_id => @server.id)
+
+        @nic_public.set_internet_access=(true)
+
+        @dc.wait_for_provisioning
+
+        wait_for(ui.color("Waiting for the Server to be accessible", :magenta)) { ssh_test(@server.public_ips.first) }
+
+        if locate_config_value(:ssh_password)
+          puts "#{ui.color("given password will be applied", :magenta)}"
+          @new_password = Chef::Config[:knife][:ssh_password]
+          @password = @new_password
+          change_password()
         end
 
-        puts "#{ui.color("Start to create the Server", :magenta)}"
-        @server = @dc.create_server(:cores => Chef::Config[:knife][:profitbricks_cpus] || 1,
-                                  :ram => Chef::Config[:knife][:profitbricks_memory] || 1024,
-                                  :name => Chef::Config[:knife][:profitbricks_server_name] || "ServerDTO",
-                                  :boot_from_storage_id => @hdd1.id)
-        @nic = @server.create_nic(nic_options)
-        wait_for("#{ui.color("Creating Server", :magenta)}") { @dc.provisioned? }
+        wait_for(ui.color("Server with Name #{@server.name} and ServerId: #{@server.id} with NIC-IP #{@nic_private.ip} and lan_id #{@lan_id_number} created", :green)) { @dc.provisioned? }
+        wait_for(ui.color("Done creating new Server and booting from HDD.Id #{@hdd1.id}", :green)) {@server.provisioned?}
 
-        #because we boot_from_storage directly we do not need to connect the hdd
-        @hdd1.connect(:server_id => @server.id, :bus_type => 'VIRTIO')
-        wait_for("#{ui.color("Connecting Storage", :magenta)}") { @dc.provisioned? }
-
-        puts "#{ui.color("Done creating new Server", :green)}"
-
-        @server.reload
-        wait_for("#{ui.color("Waiting for the Server to boot", :magenta)}") { @server.running? }
+        #@server.start
+        wait_for(ui.color("Waiting for the Server to boot", :magenta)) { @server.running? }
 
         @server = Server.find(:id => @server.id)
-        wait_for(ui.color("Waiting for the Server to be accessible", :magenta)) { ssh_test(@server.ips)  }
       end
 
       def ssh_test(ip)
@@ -298,7 +359,8 @@ class Chef
       end
 
       def change_password
-        Net::SSH.start( @server.ips, 'root', :password =>@password, :paranoid => false ) do |ssh|
+        ui.color("start to change the password", :green)
+        Net::SSH.start( @server.public_ips.first, 'root', :password =>@password, :paranoid => false ) do |ssh|
           ssh.open_channel do |channel|
              channel.on_request "exit-status" do |channel, data|
                 $exit_status = data.read_long
@@ -317,6 +379,7 @@ class Chef
              channel.wait
 
              return $exit_status == 0
+          ui.color("password changed successfully", :green)
           end
         end
       end

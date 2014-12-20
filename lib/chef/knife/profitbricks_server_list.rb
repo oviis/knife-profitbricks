@@ -35,7 +35,7 @@ class Chef
         configure
 
         unless Chef::Config[:knife][:profitbricks_datacenter]
-          ui.error("A Datacenter must be specified, please run ==knife profitbricks server list --help== for more information")
+          ui.error("A Datacenter must be specified, please run ==knife profitbricks server list -D<DATACENTER> --help== for more information")
           exit 1
         end
 
@@ -53,10 +53,14 @@ class Chef
         server_list = [
             #ui.color('ServerID', :bold),
             ui.color('Name', :bold),
+            ui.color('VM_State', :bold),
             ui.color('CPUs', :bold),
             ui.color('RAM', :bold),
             ui.color('Lan_ID', :bold),
+            ui.color('internet', :bold),
             ui.color('IPs', :bold),
+            ui.color('MAC', :bold),
+            ui.color('DHCP', :bold),
             ui.color('HDD-Size', :bold)
             #ui.color('HD_DeviceNr', :bold)
         ]
@@ -66,17 +70,22 @@ class Chef
               s.connected_storages.each do |hd|
                 #server_list << s.id
                 server_list << s.name
+                server_list << s.virtual_machine_state
                 server_list << s.cores.to_s
                 server_list << s.ram.to_s
                 server_list << n.lan_id.to_s
-                server_list << (s.respond_to?("ips") ? s.ips.to_s : "")
+                server_list << n.internet_access.to_s
+                server_list << n.ips.to_s
+                #server_list << (n.respond_to?("ips") ? s.ips.to_s : "")
+                server_list << n.mac_address
+                server_list << n.dhcp_active.to_s
                 server_list << hd.size.to_s
                 #server_list << hd.device_number.to_s
               end
             end
           end
 
-        puts ui.list(server_list, :uneven_columns_across, 6)
+        puts ui.list(server_list, :uneven_columns_across, 10)
       end
     end
   end
