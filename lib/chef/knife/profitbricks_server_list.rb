@@ -75,7 +75,7 @@ class Chef
                 server_list << s.ram.to_s
                 server_list << n.lan_id.to_s
                 server_list << n.internet_access.to_s
-                server_list << n.ips.to_s
+                server_list << n.ips.first
                 #server_list << (n.respond_to?("ips") ? s.ips.to_s : "")
                 server_list << n.mac_address
                 server_list << n.dhcp_active.to_s

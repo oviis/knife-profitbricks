@@ -15,7 +15,7 @@ class Chef
 
       include Chef::Knife::ProfitbricksBase
 
-      banner "knife profitbricks image list OPTIONS"
+      banner "knife profitbricks image list"
 
       def run
         configure
